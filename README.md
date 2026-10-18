@@ -6,19 +6,20 @@ Two parts:
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| [`plugin/poketoken`](plugin/poketoken) | the office's server (`HQ_PLUGINS_DIR/installed/poketoken`) | Keeps each member's current Pokémon and draws it following them on every page. Members create an app token in its panel. |
+| [`plugin/poketoken`](plugin/poketoken) | the office's server (`HQ_PLUGINS_DIR/installed/poketoken`) | Keeps each member's current Pokémon and gives it to them as a pet of the bundled pets plugin (`hq-pets`): it follows, wanders and comes back like their other pets. Members create an app token in its panel. |
 | [`companion`](companion) | the computer running PokeTokenBar (macOS, Windows, Linux) | A tray icon that reads PokeTokenBar's save once a minute and reports the current Pokémon to the office when it changes. It shows that Pokémon's portrait in the tray. You set the office's address and the token there. |
 
-> **Needs Home Quarters with plugin sheets from image data** ([christphe/homequarters#10](https://github.com/christphe/homequarters/issues/10), merged in `7fd2ddb`). The plugin declares `raw.githubusercontent.com` in `externalHosts`; administrators see it before turning the plugin on.
+> **Needs Home Quarters with guest pets drawn by their plugin** ([christphe/homequarters#12](https://github.com/christphe/homequarters/issues/12): `setPet` with `metadata`, `hq.provideSheet`) and sheets from image data (#10), with `hq-pets` turned on. The plugin declares `raw.githubusercontent.com` in `externalHosts`; administrators see it before turning the plugin on.
 
 ## How it works
 
 ~~~text
-PokeTokenBar save ──(every minute, on change)──> companion ──POST /plugins/poketoken/api/pokemon──> office
-  companion-state.json         { dex, form, shiny, name }        Authorization: Bearer hqp_…        │
-                                                                                                    ▼
-                         every page: fetch the PMD SpriteCollab sprite from GitHub, build the sheet,
-                         hq.loadSprite(blob) + hq.follow(member): the Pokémon walks behind its trainer
+PokeTokenBar save ──(every minute, on change)──> companion ──POST /plugins/poketoken/api/pokemon──> poketoken (server)
+  companion-state.json        { dex, form, shiny, name }        Authorization: Bearer hqp_…            │
+                                                                    setPet({ metadata: {dex,form,shiny} })
+                                                                                                         ▼
+  every page: hq-pets asks poketoken's browser code for that sheet (hq.provideSheet), which fetches the
+  PMD SpriteCollab sprite from GitHub and lays it out; hq-pets then walks it like the member's other pets
 ~~~
 
 - **What leaves your computer:** the species number, the form name, whether it is shiny, and its name in PokeTokenBar's language. Nothing else does: tokens, progression, IVs and your dex stay where they are.
@@ -29,7 +30,7 @@ PokeTokenBar save ──(every minute, on change)──> companion ──POST /p
 
 1. Copy `plugin/poketoken` to `HQ_PLUGINS_DIR/installed/poketoken` on the office's server. In Docker, mount it at `/app/plugins/installed/poketoken`; read-only is fine.
 2. Restart Home Quarters, then turn the plugin on in **Administration > Plugins**.
-3. The plugin draws its own follower. It does not need `hq-pets`, but works next to it: it walks a little further behind the member than their pets. Administration > Plugins lists the external host it fetches sprites from.
+3. Turn on the pets plugin (`hq-pets`) too: it walks the Pokémon as one of the member's pets (Let pets wander, Call pets, moods, name on hover). A member has at most 4 such guest pets, all plugins together. Administration > Plugins lists the external host poketoken fetches sprites from.
 
 ## Run the companion
 

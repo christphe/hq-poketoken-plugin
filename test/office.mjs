@@ -41,8 +41,10 @@ async function join(name) {
 const as = (m, path, init = {}) => fetch(URL_ + path, { ...init, headers: { ...init.headers, Cookie: "hq_session=" + m.cookie } });
 
 const admin = await join("Admin");
-const on = await as(admin, "/api/admin/plugins/poketoken", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: true }) });
-check("the administrator turns the plugin on", on.ok, String(on.status));
+for (const name of ["hq-pets", "poketoken"]) {
+  const on = await as(admin, "/api/admin/plugins/" + name, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: true }) });
+  check(`the administrator turns ${name} on`, on.ok, String(on.status));
+}
 const list = await (await as(admin, "/api/admin/plugins")).json();
 const row = list.find((p) => p.name === "poketoken");
 check("the plugin is running", row?.state === "running", JSON.stringify(row));
@@ -65,7 +67,9 @@ try {
     return { ...m, page, warnings };
   };
   const pm = await open(mia), pr = await open(rem);
-  const mon = (u, owner) => u.page.evaluate((id) => (window.__hq.session.plugins?.debug("poketoken") ?? []).find((c) => c.player === id && c.visible) ?? null, owner);
+  // the Pokémon is a guest pet of hq-pets, its sheet drawn by poketoken on the page
+  const mon = (u, owner) => u.page.evaluate((id) => (window.__hq.session.plugins?.debug("hq-pets") ?? []).find((c) => c.id.startsWith(id + ":x:poketoken:") && c.visible) ?? null, String(owner));
+  const keyOf = async (u, owner) => (await mon(u, owner))?.key;
   const shot = async (u, owner, name) => {
     const c = await mon(u, owner);
     if (!c) return;
@@ -78,15 +82,16 @@ try {
   check("the companion's report is accepted", r.ok, String(r.status));
   // on Rem's own page: Mia may stand too far away to have Rem on screen
   const p = await waitFor(() => mon(pr, rem.id));
-  check("Rem's Pikachu is drawn following Rem", p?.mode === "follow" && p?.label === "Pikachu", JSON.stringify(p));
+  check("Rem's Pikachu is a pet following Rem", p?.mode === "follow" && p?.player === rem.id, JSON.stringify(p));
   await shot(pr, rem.id, "pikachu");
   for (const [body, name] of [[{ dex: 6, shiny: true, name: "Dracaufeu" }, "charizard-shiny"], [{ dex: 321, name: "Wailord" }, "wailord"], [{ dex: 0 }, "egg"]]) {
     await report(body);
-    const c = await waitFor(async () => { const m = await mon(pr, rem.id); return m && m.label === (body.name ?? "Egg") ? m : null; });
+    const before = await keyOf(pr, rem.id);
+    const c = await waitFor(async () => { const m = await mon(pr, rem.id); return m && m.key !== before ? m : null; });
     check(`${body.name ?? "the egg"} replaces it`, !!c);
     await shot(pr, rem.id, name);
   }
-  const warns = [...pm.warnings, ...pr.warnings].filter((w) => /poketoken|plugin|Content Security/i.test(w));
+  const warns = [...pm.warnings, ...pr.warnings].filter((w) => /poketoken|hq-pets|plugin|Content Security/i.test(w));
   check("no warnings about the plugin in the consoles", warns.length === 0, JSON.stringify(warns.slice(0, 5)));
 } finally {
   await browser.close();

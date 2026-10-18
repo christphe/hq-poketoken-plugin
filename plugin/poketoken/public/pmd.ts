@@ -1,7 +1,7 @@
 // Builds a Home Quarters sprite sheet for one Pokémon from PMD SpriteCollab, in the browser: nothing of
 // SpriteCollab is stored or served by this plugin. The page downloads Walk-Anim.png, Idle-Anim.png and
 // AnimData.xml from GitHub, crops the frames around the creature (feet on the bottom of the cell) and
-// lays them out as 8 rows (walk down, left, right, up, then idle down, left, right, up), shrunk to pet size.
+// lays them out (walking, then standing still), shrunk to pet size.
 import forms from "./forms.json";
 
 /** PokeTokenBar form names (Sources/PokeTokenBar/Core/PokemonForm.swift) -> SpriteCollab form folders
@@ -73,7 +73,7 @@ async function anim(dir: string, all: Map<string, Element>, name: string): Promi
 }
 
 /** The opaque box of an animation's frames on our four rows, relative to the frame's bottom centre. */
-function box(a: Anim): { half: number; top: number; bottom: number } {
+function box(a: Anim, frames = a.durations.length): { half: number; top: number; bottom: number } {
   const c = new OffscreenCanvas(a.img.width, a.img.height);
   const g = c.getContext("2d")!;
   g.drawImage(a.img, 0, 0);
@@ -81,7 +81,7 @@ function box(a: Anim): { half: number; top: number; bottom: number } {
   const rows = Math.max(1, Math.floor(a.img.height / a.fh));
   let half = 0, top = a.fh, bottom = 0;
   for (const r of PMD_ROWS.map((r) => Math.min(r, rows - 1))) {
-    for (let f = 0; f < a.durations.length; f++) {
+    for (let f = 0; f < frames; f++) {
       for (let y = 0; y < a.fh; y++) {
         for (let x = 0; x < a.fw; x++) {
           if (px[((r * a.fh + y) * a.img.width + f * a.fw + x) * 4 + 3] < 16) continue;
@@ -95,7 +95,7 @@ function box(a: Anim): { half: number; top: number; bottom: number } {
   return { half: Math.ceil(half), top, bottom };
 }
 
-/** SpriteCollab gives each frame its own duration (an idle often holds its first pose); Home Quarters plays
+/** SpriteCollab gives each frame its own duration; Home Quarters plays
  * frames at one rate, so a frame is repeated for each `unit` ticks it lasts, within 64 frames. */
 function timing(durations: number[]): { frames: number[]; fps: number } {
   const total = durations.reduce((s, d) => s + d, 0);
@@ -119,43 +119,42 @@ export async function build(dex: number, form: string, shiny: boolean): Promise<
     }
     const walk = await anim(dir, all, "Walk");
     if (!walk) continue;
-    const idle = (await anim(dir, all, "Idle")) ?? walk;
-    return layout(walk, idle);
+    return layout(walk, (await anim(dir, all, "Idle")) ?? walk);
   }
   return null;
 }
 
+/** Rows 0-3 walk (down, left, right, up); rows 4-7 the first frame of the idle animation, held still while
+ * the Pokémon stands: the animation itself (breathing, looking around) jitters at pet size and draws the
+ * eye in a busy office. */
 async function layout(walk: Anim, idle: Anim): Promise<Built> {
-  const bw = box(walk), bi = idle === walk ? bw : box(idle);
+  const bw = box(walk), bi = box(idle, 1);
   const tall = Math.max(bw.bottom - bw.top, bi.bottom - bi.top, 1);
   const [UP, DOWN] = tall > BIG ? [1, 3] : [2, 3]; // shrunk DOWN / UP times
   const fit = (n: number) => Math.ceil(n / DOWN) * DOWN; // cells that shrink to whole pixels
   const frameW = Math.max(fit(8 * DOWN / UP), fit(2 * Math.max(bw.half, bi.half, 1)));
   const frameH = Math.max(fit(8 * DOWN / UP), fit(tall));
-  const cols = Math.min(64, Math.max(walk.durations.length, idle.durations.length));
-  const c = new OffscreenCanvas(cols * frameW, 8 * frameH);
+  const n = Math.min(64, walk.durations.length);
+  const c = new OffscreenCanvas(n * frameW, 8 * frameH);
   const g = c.getContext("2d")!;
   g.imageSmoothingEnabled = false;
   const anims: HQ.Anims = {};
-  const dirs = ["down", "left", "right", "up"];
-  [walk, idle].forEach((a, k) => {
-    const b = k === 0 ? bw : bi;
-    const rows = Math.max(1, Math.floor(a.img.height / a.fh));
-    const n = Math.min(cols, a.durations.length);
-    PMD_ROWS.forEach((pr, i) => {
-      const row = k * 4 + i, src = Math.min(pr, rows - 1);
-      for (let f = 0; f < n; f++) {
-        // the frame's bottom centre (its box's bottom) lands on the cell's bottom centre
-        const dx = f * frameW + frameW / 2 - a.fw / 2, dy = (row + 1) * frameH - b.bottom;
-        g.save();
-        g.beginPath();
-        g.rect(f * frameW, row * frameH, frameW, frameH);
-        g.clip();
-        g.drawImage(a.img, f * a.fw, src * a.fh, a.fw, a.fh, Math.round(dx), Math.round(dy), a.fw, a.fh);
-        g.restore();
-      }
-      anims[(k === 0 ? "walk-" : "idle-") + dirs[i]] = { row, ...timing(a.durations.slice(0, n)) };
-    });
+  const draw = (a: Anim, b: typeof bw, f: number, row: number, dir: number) => {
+    const src = Math.min(PMD_ROWS[dir], Math.max(1, Math.floor(a.img.height / a.fh)) - 1);
+    // the frame's bottom centre (its box's bottom) lands on the cell's bottom centre
+    const dx = f * frameW + frameW / 2 - a.fw / 2, dy = (row + 1) * frameH - b.bottom;
+    g.save();
+    g.beginPath();
+    g.rect(f * frameW, row * frameH, frameW, frameH);
+    g.clip();
+    g.drawImage(a.img, f * a.fw, src * a.fh, a.fw, a.fh, Math.round(dx), Math.round(dy), a.fw, a.fh);
+    g.restore();
+  };
+  ["down", "left", "right", "up"].forEach((d, i) => {
+    for (let f = 0; f < n; f++) draw(walk, bw, f, i, i);
+    draw(idle, bi, 0, 4 + i, i);
+    anims["walk-" + d] = { row: i, ...timing(walk.durations.slice(0, n)) };
+    anims["idle-" + d] = { row: 4 + i, frames: [0], fps: 0 };
   });
   walk.img.close();
   if (idle !== walk) idle.img.close();
@@ -207,10 +206,10 @@ function shrink(src: OffscreenCanvas, n: number): OffscreenCanvas {
   return out;
 }
 
-/** A small egg drawn here (cream with green spots), 3 wobble frames, the same on all four rows. */
+/** A small egg drawn here (cream with green spots): it wobbles while it follows, stands still otherwise. */
 export async function egg(): Promise<Built> {
-  const W = 16, H = 18, c = new OffscreenCanvas(W * 3, H * 8), g = c.getContext("2d")!;
-  for (let row = 0; row < 8; row++) {
+  const W = 16, H = 18, c = new OffscreenCanvas(W * 3, H * 4), g = c.getContext("2d")!;
+  for (let row = 0; row < 4; row++) {
     for (let f = 0; f < 3; f++) {
       const ox = f * W + (f === 1 ? -1 : f === 2 ? 1 : 0), oy = row * H;
       for (let y = 0; y < 16; y++) {
@@ -229,7 +228,7 @@ export async function egg(): Promise<Built> {
   const anims: HQ.Anims = {};
   ["down", "left", "right", "up"].forEach((d, i) => {
     anims["walk-" + d] = { row: i, frames: [1, 0, 2, 0], fps: 8 };
-    anims["idle-" + d] = { row: 4 + i, frames: [0, 0, 0, 0, 1, 0, 2, 0], fps: 4 };
+    anims["idle-" + d] = { row: i, frames: [0], fps: 0 };
   });
   return { blob: await c.convertToBlob({ type: "image/png" }), frameW: W, frameH: H, anims };
 }

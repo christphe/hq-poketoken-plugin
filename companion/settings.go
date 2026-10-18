@@ -74,8 +74,11 @@ func (s *settings) guard(next http.Handler) http.Handler {
 }
 
 type view struct {
-	Key       string
-	Config    config.Config
+	Key    string
+	Config config.Config
+	// Token is what was typed in the token field, put back after a test or a refused save so nothing
+	// typed is lost; the saved token itself is never written into the page.
+	Token     string
 	HasToken  bool
 	Found     string
 	Status    string
@@ -84,16 +87,19 @@ type view struct {
 	OK        bool
 }
 
-func (s *settings) render(w http.ResponseWriter, msg string, ok bool) {
-	c := s.app.config()
+// render draws the page with c in its fields (the saved settings, or what the form sent), typed being
+// what the token field held.
+func (s *settings) render(w http.ResponseWriter, c config.Config, typed, msg string, ok bool) {
 	dir, _ := config.Dir()
-	v := view{Key: s.key, Config: c, HasToken: c.Token != "", Found: ptb.Find(), Status: s.app.statusLine(), ConfigDir: dir, Message: msg, OK: ok}
+	v := view{Key: s.key, Config: c, Token: typed, HasToken: s.app.config().Token != "", Found: ptb.Find(), Status: s.app.statusLine(), ConfigDir: dir, Message: msg, OK: ok}
 	v.Config.Token = ""
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = settingsPage.Execute(w, v)
 }
 
-func (s *settings) page(w http.ResponseWriter, _ *http.Request) { s.render(w, "", true) }
+func (s *settings) page(w http.ResponseWriter, _ *http.Request) {
+	s.render(w, s.app.config(), "", "", true)
+}
 
 // fromForm merges the form into the current settings; an empty token keeps the saved one.
 func (s *settings) fromForm(r *http.Request) config.Config {
@@ -111,17 +117,17 @@ func (s *settings) fromForm(r *http.Request) config.Config {
 }
 
 func (s *settings) save(w http.ResponseWriter, r *http.Request) {
-	c := s.fromForm(r)
+	c, typed := s.fromForm(r), strings.TrimSpace(r.PostFormValue("token"))
 	if _, err := office.New(c.Server, c.Token); err != nil {
-		s.render(w, err.Error(), false)
+		s.render(w, c, typed, err.Error(), false)
 		return
 	}
 	if err := s.app.setConfig(c); err != nil {
-		s.render(w, "Could not save the settings: "+err.Error(), false)
+		s.render(w, c, typed, "Could not save the settings: "+err.Error(), false)
 		return
 	}
 	s.app.wake(true)
-	s.render(w, "Saved. The current Pokémon is being sent.", true)
+	s.render(w, c, "", "Saved. The current Pokémon is being sent.", true)
 }
 
 func (s *settings) test(w http.ResponseWriter, r *http.Request) {
@@ -135,9 +141,10 @@ func (s *settings) test(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		_, err = cl.Get(ctx)
 	}
+	typed := strings.TrimSpace(r.PostFormValue("token"))
 	if err != nil {
-		s.render(w, "Connection failed: "+err.Error(), false)
+		s.render(w, c, typed, "Connection failed: "+err.Error(), false)
 		return
 	}
-	s.render(w, "The office accepts this token. Save to use it.", true)
+	s.render(w, c, typed, "The office accepts this token. Save to use it.", true)
 }

@@ -36,7 +36,7 @@
       <input type="url" name="server" value="{{.Config.Server}}" placeholder="https://office.example.com" required>
     </label>
     <label>App token
-      <input type="password" name="token" value="" placeholder="{{if .HasToken}}Saved — leave empty to keep it{{else}}hqp_…{{end}}" autocomplete="off">
+      <input type="password" name="token" value="{{.Token}}" placeholder="{{if .HasToken}}Saved — leave empty to keep it{{else}}hqp_…{{end}}" autocomplete="off">
       <small>In the office: side panel &gt; Plugins &gt; PokeToken &gt; Create token.</small>
     </label>
     <label>Pokémon to show

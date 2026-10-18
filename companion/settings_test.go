@@ -32,6 +32,7 @@ func do(s *settings, method, target string, form url.Values) *httptest.ResponseR
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.page)
 	mux.HandleFunc("POST /save", s.save)
+	mux.HandleFunc("POST /test", s.test)
 	s.guard(mux).ServeHTTP(w, r)
 	return w
 }
@@ -70,5 +71,29 @@ func TestSettingsSaveKeepsTheToken(t *testing.T) {
 	}
 	if force := <-s.app.wakeup; !force {
 		t.Fatal("saving must send at once")
+	}
+}
+
+func TestSettingsKeepWhatWasTyped(t *testing.T) {
+	s := testSettings(t)
+	// a test against an address that refuses, and a save that is refused: the page keeps the typed values
+	form := url.Values{"k": {"k1"}, "server": {"https://127.0.0.1:1"}, "token": {"hqp_typed"}, "follow": {"pinned"}, "savePath": {"/tmp/x.json"}}
+	for _, path := range []string{"/test", "/save"} {
+		f := url.Values{}
+		for k, v := range form {
+			f[k] = v
+		}
+		if path == "/save" {
+			f.Set("server", "not an address")
+		}
+		body := do(s, "POST", path, f).Body.String()
+		for _, want := range []string{`value="hqp_typed"`, `value="/tmp/x.json"`, `value="pinned" selected`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: the page lost %s", path, want)
+			}
+		}
+	}
+	if c := s.app.config(); c.Token != "hqp_old" || c.Server != "https://old.example.com" {
+		t.Fatalf("nothing should have been saved: %+v", c)
 	}
 }

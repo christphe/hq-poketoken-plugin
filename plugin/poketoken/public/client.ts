@@ -13,7 +13,7 @@ interface Want { sheet: string; dex: number; form: string; shiny: boolean; name:
 
 const roster = new Map<number, Want>(); // member -> what they show
 const drawn = new Map<number, string>(); // member -> the sheet id their sprite is drawn with
-/** A sheet handed to the page: its key and cell size (rows 0-3 walk, 4-7 idle). */
+/** A sheet handed to the page: its key and cell size (rows 0-3 walk, 4-7 standing). */
 interface Loaded { key: string; w: number; h: number }
 const sheets = new Map<string, Promise<Loaded | null>>(); // sheet id -> the loaded sheet (null: none)
 let mine: { current: Pokemon | null; hidden: boolean; at: number } = { current: null, hidden: false, at: 0 };
@@ -79,7 +79,7 @@ function describe(p: Pokemon | null): string {
 
 const wantOf = (p: Pokemon): Want => ({ sheet: sheetId(p.dex, p.form, p.shiny), ...p });
 
-/** The member's own Pokémon standing (idle, facing down), once its sheet is loaded. */
+/** The member's own Pokémon standing, facing down, once its sheet is loaded. */
 let preview: { sheet: string; loaded: Loaded } | null = null;
 
 function openModal(): void {

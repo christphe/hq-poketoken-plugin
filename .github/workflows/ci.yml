@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+
+  companion:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, goos: linux, ext: "" }
+          - { os: windows-latest, goos: windows, ext: ".exe" }
+          - { os: macos-latest, goos: darwin, ext: "" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      - run: go vet ./...
+      - run: go test ./...
+      - name: build
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          flags="-s -w -X main.version=$version"
+          if [ "${{ matrix.goos }}" = windows ]; then flags="$flags -H windowsgui"; fi
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            if [ "${{ matrix.goos }}" = darwin ]; then export CGO_ENABLED=1; fi
+            GOARCH=$arch go build -trimpath -ldflags "$flags" -o "dist/poketoken-companion-${{ matrix.goos }}-$arch${{ matrix.ext }}" ./companion
+          done
+      - name: macOS app (menu bar only, no Dock icon)
+        if: matrix.goos == 'darwin'
+        run: |
+          app="dist/PokeToken Companion.app"
+          mkdir -p "$app/Contents/MacOS"
+          lipo -create dist/poketoken-companion-darwin-amd64 dist/poketoken-companion-darwin-arm64 -output "$app/Contents/MacOS/poketoken-companion"
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>PokeToken Companion</string>
+            <key>CFBundleIdentifier</key><string>io.github.christphe.poketoken-companion</string>
+            <key>CFBundleExecutable</key><string>poketoken-companion</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${GITHUB_REF_NAME#v}</string>
+            <key>LSUIElement</key><true/>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+          </dict></plist>
+          PLIST
+          codesign --force --deep --sign - "$app"
+          (cd dist && ditto -c -k --keepParent "PokeToken Companion.app" poketoken-companion-macos.zip && rm -rf "PokeToken Companion.app" poketoken-companion-darwin-*)
+      - uses: actions/upload-artifact@v4
+        with: { name: "companion-${{ matrix.goos }}", path: dist/ }
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [plugin, companion]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: plugin folder
+        run: (cd plugin && zip -r ../dist/poketoken-plugin.zip poketoken)
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

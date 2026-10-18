@@ -1,0 +1,6 @@
+node_modules/
+bin/
+dist/
+sprites-out/
+*.exe
+.DS_Store

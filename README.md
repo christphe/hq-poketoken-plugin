@@ -23,7 +23,7 @@ PokeTokenBar save ──(every minute, on change)──> companion ──POST /p
 
 - **What leaves your computer:** the species number, the form name, whether it is shiny, and its name in PokeTokenBar's language. Nothing else does: tokens, progression, IVs and your dex stay where they are.
 - **Which Pokémon:** by default, the one being raised (an egg before it hatches). You can choose the one pinned in PokeTokenBar instead.
-- **Sprites:** they come from [PMD SpriteCollab](https://github.com/PMDCollab/SpriteCollab) (CC BY-NC 4.0). Neither this repository nor the office stores them. Each viewer's browser downloads `Walk-Anim.png`, `Idle-Anim.png` and `AnimData.xml` from `raw.githubusercontent.com` and crops them into a sheet, feet at the bottom, shrunk to the size of a pet (1.5 times, 3 times for the biggest). GitHub therefore sees each viewer's IP address. Species that SpriteCollab has not drawn yet are shown as an egg.
+- **Sprites:** they come from [PMD SpriteCollab](https://github.com/PMDCollab/SpriteCollab) (CC BY-NC 4.0). Neither this repository nor the office stores them. Each viewer's browser downloads `Walk-Anim.png`, `Idle-Anim.png` and `AnimData.xml` from `raw.githubusercontent.com` and crops them into a sheet (the walk, and the first idle frame held still when it stands), feet at the bottom, shrunk to the size of a pet (1.5 times, 3 times for the biggest). GitHub therefore sees each viewer's IP address. Species that SpriteCollab has not drawn yet are shown as an egg.
 
 ## Install the plugin
 

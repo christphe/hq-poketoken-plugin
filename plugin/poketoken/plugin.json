@@ -1,9 +1,9 @@
 {
   "name": "poketoken",
   "title": "PokeToken",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Each member's PokeTokenBar Pokémon follows them around the office, sent by a small desktop companion.",
-  "longDescription": "PokeTokenBar raises a Pokémon with the AI coding tokens you use. With this plugin, the Pokémon it is raising follows you in the office, and changes when it hatches or evolves.\n\nEach member creates an app token in the side panel (Plugins > PokeToken) and pastes it, with the office's address, into the PokeToken companion running next to PokeTokenBar. The companion reads PokeTokenBar's save once a minute and reports the current Pokémon (species, form, shiny) when it changes; nothing else from the save leaves the computer.\n\nSprites come from PMD SpriteCollab (CC BY-NC 4.0). They are not stored on this server: each viewer's browser downloads them from raw.githubusercontent.com, which therefore sees that viewer's IP address. Unofficial fan plugin, not affiliated with Nintendo, Creatures, GAME FREAK or The Pokémon Company.",
+  "longDescription": "PokeTokenBar raises a Pokémon with the AI coding tokens you use. With this plugin, the Pokémon it is raising becomes one of your pets (the bundled Pets plugin must be on): it follows you, wanders and comes back with your other pets, and changes when it hatches or evolves.\n\nEach member creates an app token in the side panel (Plugins > PokeToken) and pastes it, with the office's address, into the PokeToken companion running next to PokeTokenBar. The companion reads PokeTokenBar's save once a minute and reports the current Pokémon (species, form, shiny) when it changes; nothing else from the save leaves the computer.\n\nSprites come from PMD SpriteCollab (CC BY-NC 4.0). They are not stored on this server: each viewer's browser downloads them from raw.githubusercontent.com, which therefore sees that viewer's IP address. Unofficial fan plugin, not affiliated with Nintendo, Creatures, GAME FREAK or The Pokémon Company.",
   "server": "main.ts",
   "client": "client.ts",
   "appTokens": true,

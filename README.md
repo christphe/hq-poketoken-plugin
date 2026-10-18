@@ -9,7 +9,7 @@ Two parts:
 | [`plugin/poketoken`](plugin/poketoken) | the office's server (`HQ_PLUGINS_DIR/installed/poketoken`) | Keeps each member's current Pokémon and gives it to them as a pet of the bundled pets plugin (`hq-pets`): it follows, wanders and comes back like their other pets. Members create an app token in its panel. |
 | [`companion`](companion) | the computer running PokeTokenBar (macOS, Windows, Linux) | A tray icon that reads PokeTokenBar's save once a minute and reports the current Pokémon to the office when it changes. It shows that Pokémon's portrait in the tray. You set the office's address and the token there. |
 
-> **Needs Home Quarters with guest pets drawn by their plugin** ([christphe/homequarters#12](https://github.com/christphe/homequarters/issues/12): `setPet` with `metadata`, `hq.provideSheet`) and sheets from image data (#10), with `hq-pets` turned on. The plugin declares `raw.githubusercontent.com` in `externalHosts`; administrators see it before turning the plugin on.
+> **Needs Home Quarters with guest pets drawn by their plugin** ([christphe/homequarters#12](https://github.com/christphe/homequarters/issues/12), PR [#14](https://github.com/christphe/homequarters/pull/14): `setPet` with `metadata`, `hq.provideSheet`) and sheets from image data (#10), with `hq-pets` turned on. The plugin declares `raw.githubusercontent.com` in `externalHosts`; administrators see it before turning the plugin on.
 
 ## How it works
 

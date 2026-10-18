@@ -9,7 +9,7 @@ Two parts:
 | [`plugin/poketoken`](plugin/poketoken) | the office's server (`HQ_PLUGINS_DIR/installed/poketoken`) | Keeps each member's current Pokémon and draws it following them on every page. Members create an app token in its panel. |
 | [`companion`](companion) | the computer running PokeTokenBar (macOS, Windows, Linux) | A tray icon that reads PokeTokenBar's save once a minute and reports the current Pokémon to the office when it changes. It shows that Pokémon's portrait in the tray. You set the office's address and the token there. |
 
-> **Status: needs a Home Quarters change.** The plugin builds its sprite sheets in the browser and gives them to the page as image data. That needs `hq.loadSprite(key, blob, ...)`, requested in [christphe/homequarters#10](https://github.com/christphe/homequarters/issues/10). The plugin's server side, the companion and the sheet builder all work today. Until a Home Quarters release has the change, the page stops the plugin's browser side and says why in the console.
+> **Needs Home Quarters with plugin sheets from image data** ([christphe/homequarters#10](https://github.com/christphe/homequarters/issues/10), merged in `7fd2ddb`). The plugin declares `raw.githubusercontent.com` in `externalHosts`; administrators see it before turning the plugin on.
 
 ## How it works
 
@@ -29,7 +29,7 @@ PokeTokenBar save ──(every minute, on change)──> companion ──POST /p
 
 1. Copy `plugin/poketoken` to `HQ_PLUGINS_DIR/installed/poketoken` on the office's server. In Docker, mount it at `/app/plugins/installed/poketoken`; read-only is fine.
 2. Restart Home Quarters, then turn the plugin on in **Administration > Plugins**.
-3. The plugin draws its own follower. It does not need `hq-pets`, but works next to it: it walks a little further behind the member than their pets.
+3. The plugin draws its own follower. It does not need `hq-pets`, but works next to it: it walks a little further behind the member than their pets. Administration > Plugins lists the external host it fetches sprites from.
 
 ## Run the companion
 

@@ -4,12 +4,6 @@
 import type { Entry, Pokemon, ToPage } from "./messages";
 import { build, egg, type Built } from "./pmd";
 
-/** The page API this plugin needs on top of client.d.ts: a sheet from image data the plugin produced.
- * Requested in christphe/homequarters#10; until a Home Quarters release has it, the page refuses the
- * command and stops this plugin on that page (with the reason in the console). */
-type LoadFromData = (key: string, image: Blob, opts: { frameW: number; frameH: number; anims?: HQ.Anims }) => void;
-const loadSpriteData = hq.loadSprite as unknown as LoadFromData;
-
 /** Sheets a page may load for one plugin (Home Quarters' limit). */
 const SHEETS_MAX = 32;
 /** Behind the member's own pets (hq-pets walks them 20, 36, 52 px behind). */
@@ -19,14 +13,16 @@ interface Want { sheet: string; dex: number; form: string; shiny: boolean; name:
 
 const roster = new Map<number, Want>(); // member -> what they show
 const drawn = new Map<number, string>(); // member -> the sheet id their sprite is drawn with
-const sheets = new Map<string, Promise<string | null>>(); // sheet id -> hq sheet key (null: none)
+/** A sheet handed to the page: its key and cell size (rows 0-3 walk, 4-7 idle). */
+interface Loaded { key: string; w: number; h: number }
+const sheets = new Map<string, Promise<Loaded | null>>(); // sheet id -> the loaded sheet (null: none)
 let mine: { current: Pokemon | null; hidden: boolean; at: number } = { current: null, hidden: false, at: 0 };
 let modalOpen = false;
 
 const sheetId = (dex: number, form: string, shiny: boolean) => dex === 0 ? "egg" : `${dex}-${form}-${shiny ? 1 : 0}`;
 const spriteId = (member: number) => "p" + member;
 
-function sheet(w: Want): Promise<string | null> {
+function sheet(w: Want): Promise<Loaded | null> {
   let p = sheets.get(w.sheet);
   if (!p) {
     if (sheets.size >= SHEETS_MAX) return Promise.resolve(null);
@@ -39,8 +35,8 @@ function sheet(w: Want): Promise<string | null> {
       .then(async (b) => b ?? (w.dex === 0 ? null : await egg())) // no SpriteCollab sprite: an egg stands in
       .then((b) => {
         if (!b) return null;
-        loadSpriteData(key, b.blob, { frameW: b.frameW, frameH: b.frameH, anims: b.anims });
-        return key;
+        hq.loadSprite(key, b.blob, { frameW: b.frameW, frameH: b.frameH, anims: b.anims });
+        return { key, w: b.frameW, h: b.frameH };
       });
     sheets.set(w.sheet, p);
   }
@@ -54,12 +50,12 @@ async function draw(member: number): Promise<void> {
     return;
   }
   if (drawn.get(member) !== w.sheet) {
-    const key = await sheet(w);
+    const loaded = await sheet(w);
     if (roster.get(member) !== w) return; // it changed while the sheet loaded
-    if (!key) return;
+    if (!loaded) return;
     const first = !drawn.has(member);
     drawn.set(member, w.sheet);
-    hq.spawn(spriteId(member), key); // an existing sprite keeps its place, only its picture changes
+    hq.spawn(spriteId(member), loaded.key); // an existing sprite keeps its place, only its picture changes
     if (first) hq.follow(spriteId(member), member, FOLLOW);
   }
   hq.setLabel(spriteId(member), w.name || null, { owner: member });
@@ -81,11 +77,28 @@ function describe(p: Pokemon | null): string {
   return `PokeTokenBar is raising ${what}.`;
 }
 
+const wantOf = (p: Pokemon): Want => ({ sheet: sheetId(p.dex, p.form, p.shiny), ...p });
+
+/** The member's own Pokémon standing (idle, facing down), once its sheet is loaded. */
+let preview: { sheet: string; loaded: Loaded } | null = null;
+
 function openModal(): void {
   modalOpen = true;
+  const p = mine.current;
+  const want = p ? wantOf(p) : null;
+  if (want && preview?.sheet !== want.sheet) {
+    void sheet(want).then((loaded) => {
+      if (loaded && mine.current && wantOf(mine.current).sheet === want.sheet) {
+        preview = { sheet: want.sheet, loaded };
+        if (modalOpen) openModal();
+      }
+    });
+  }
+  const pic = want && preview?.sheet === want.sheet && preview.loaded.w <= 128 && preview.loaded.h <= 128 ? preview.loaded : null;
   const when = mine.at ? new Date(mine.at * 1000).toLocaleString() : "";
   hq.ui.modal({ title: "PokeToken", size: "medium", onClose: () => { modalOpen = false; } }, [
-    hq.ui.text(describe(mine.current)),
+    ...(pic && p ? [hq.ui.sprite({ sheet: pic.key, frame: [0, 4 * pic.h, pic.w, pic.h], scale: pic.h > 48 ? 1 : 2, alt: p.name.slice(0, 40) })] : []),
+    hq.ui.text(describe(p)),
     ...(when ? [hq.ui.text("Last change reported " + when + ".", { muted: true })] : []),
     hq.ui.button({
       label: mine.hidden ? "Show my Pokémon" : "Hide my Pokémon",

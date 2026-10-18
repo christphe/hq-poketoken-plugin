@@ -12,21 +12,22 @@ export interface Pokemon {
   name: string;
 }
 
+/** What hq-pets keeps with the guest pet, and hands back to this plugin's provideSheet on each page. */
+export interface SheetMetadata {
+  dex: number;
+  form: string;
+  shiny: boolean;
+}
+
 export const DEX_MAX = 1025;
 /** A form name as PokeTokenBar writes it. */
 export const FORM_RE = /^[a-z0-9-]{0,16}$/;
 export const NAME_MAX = 24;
 
-/** One member's entry in the office roster: [member, dex, form, shiny 0/1, name], or [member] when they
- * show nothing (no Pokémon, hidden, or gone). */
-export type Entry = [id: number, dex?: number, form?: string, shiny?: 0 | 1, name?: string];
-
 /** Page -> server. */
 export type ToServer =
-  | { t: "get" } // send me the roster and my own state
+  | { t: "get" } // send me my state
   | { t: "hide"; on: boolean }; // take my Pokémon off the map, or put it back
 
-/** Server -> page. */
-export type ToPage =
-  | { t: "roster"; e: Entry[]; full: boolean } // full: the first piece of a whole roster (forget the old one)
-  | { t: "me"; current: Pokemon | null; hidden: boolean; at: number };
+/** Server -> page: the member's own state, for their modal. error: why the pets plugin refused the pet. */
+export type ToPage = { t: "me"; current: Pokemon | null; hidden: boolean; at: number; error: string | null };

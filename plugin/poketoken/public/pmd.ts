@@ -1,7 +1,7 @@
 // Builds a Home Quarters sprite sheet for one Pokémon from PMD SpriteCollab, in the browser: nothing of
 // SpriteCollab is stored or served by this plugin. The page downloads Walk-Anim.png, Idle-Anim.png and
 // AnimData.xml from GitHub, crops the frames around the creature (feet on the bottom of the cell) and
-// lays them out (walking, then standing still), shrunk to pet size.
+// lays them out as hq-pets draws its pets (4 rows of 3 cells: standing, step, step), shrunk to pet size.
 import forms from "./forms.json";
 
 /** PokeTokenBar form names (Sources/PokeTokenBar/Core/PokemonForm.swift) -> SpriteCollab form folders
@@ -17,8 +17,6 @@ const PMD_ROWS = [0, 6, 2, 4];
  * a meeting room: drawn UP times larger, then each DOWN x DOWN block becomes one pixel. */
 const BIG = 56;
 
-/** SpriteCollab durations count game frames, 60 a second. */
-const TICKS = 60;
 
 export interface Built {
   blob: Blob;
@@ -73,7 +71,7 @@ async function anim(dir: string, all: Map<string, Element>, name: string): Promi
 }
 
 /** The opaque box of an animation's frames on our four rows, relative to the frame's bottom centre. */
-function box(a: Anim, frames = a.durations.length): { half: number; top: number; bottom: number } {
+function box(a: Anim, frames: number[]): { half: number; top: number; bottom: number } {
   const c = new OffscreenCanvas(a.img.width, a.img.height);
   const g = c.getContext("2d")!;
   g.drawImage(a.img, 0, 0);
@@ -81,7 +79,7 @@ function box(a: Anim, frames = a.durations.length): { half: number; top: number;
   const rows = Math.max(1, Math.floor(a.img.height / a.fh));
   let half = 0, top = a.fh, bottom = 0;
   for (const r of PMD_ROWS.map((r) => Math.min(r, rows - 1))) {
-    for (let f = 0; f < frames; f++) {
+    for (const f of frames) {
       for (let y = 0; y < a.fh; y++) {
         for (let x = 0; x < a.fw; x++) {
           if (px[((r * a.fh + y) * a.img.width + f * a.fw + x) * 4 + 3] < 16) continue;
@@ -95,18 +93,6 @@ function box(a: Anim, frames = a.durations.length): { half: number; top: number;
   return { half: Math.ceil(half), top, bottom };
 }
 
-/** SpriteCollab gives each frame its own duration; Home Quarters plays
- * frames at one rate, so a frame is repeated for each `unit` ticks it lasts, within 64 frames. */
-function timing(durations: number[]): { frames: number[]; fps: number } {
-  const total = durations.reduce((s, d) => s + d, 0);
-  let unit = Math.max(1, Math.min(...durations));
-  while (total / unit > 64) unit *= 2;
-  const frames: number[] = [];
-  durations.forEach((d, f) => {
-    for (let k = Math.max(1, Math.round(d / unit)); k > 0 && frames.length < 64; k--) frames.push(f);
-  });
-  return { frames, fps: Math.max(1, Math.min(60, Math.round(TICKS / unit))) };
-}
 
 /** Downloads and lays out the sheet of that Pokémon; null when SpriteCollab has no walk animation for it. */
 export async function build(dex: number, form: string, shiny: boolean): Promise<Built | null> {
@@ -124,37 +110,39 @@ export async function build(dex: number, form: string, shiny: boolean): Promise<
   return null;
 }
 
-/** Rows 0-3 walk (down, left, right, up); rows 4-7 the first frame of the idle animation, held still while
- * the Pokémon stands: the animation itself (breathing, looking around) jitters at pet size and draws the
- * eye in a busy office. */
+/** hq-pets' format: 4 rows (down, left, right, up) of 3 cells. The first is the Pokémon standing, the
+ * first frame of its idle animation held still (the animation itself jitters at pet size and draws the
+ * eye); the other two are steps of its walk, which hq-pets plays step, stand, step, stand. */
 async function layout(walk: Anim, idle: Anim): Promise<Built> {
-  const bw = box(walk), bi = box(idle, 1);
+  const n = walk.durations.length;
+  const steps = n >= 4 ? [Math.floor(n / 4), Math.floor((3 * n) / 4)] : [0, n - 1]; // 1 and 3 of a 4-frame walk
+  const bw = box(walk, steps), bi = box(idle, [0]);
   const tall = Math.max(bw.bottom - bw.top, bi.bottom - bi.top, 1);
   const [UP, DOWN] = tall > BIG ? [1, 3] : [2, 3]; // shrunk DOWN / UP times
-  const fit = (n: number) => Math.ceil(n / DOWN) * DOWN; // cells that shrink to whole pixels
+  const fit = (v: number) => Math.ceil(v / DOWN) * DOWN; // cells that shrink to whole pixels
   const frameW = Math.max(fit(8 * DOWN / UP), fit(2 * Math.max(bw.half, bi.half, 1)));
   const frameH = Math.max(fit(8 * DOWN / UP), fit(tall));
-  const n = Math.min(64, walk.durations.length);
-  const c = new OffscreenCanvas(n * frameW, 8 * frameH);
+  const c = new OffscreenCanvas(3 * frameW, 4 * frameH);
   const g = c.getContext("2d")!;
   g.imageSmoothingEnabled = false;
-  const anims: HQ.Anims = {};
-  const draw = (a: Anim, b: typeof bw, f: number, row: number, dir: number) => {
-    const src = Math.min(PMD_ROWS[dir], Math.max(1, Math.floor(a.img.height / a.fh)) - 1);
-    // the frame's bottom centre (its box's bottom) lands on the cell's bottom centre
-    const dx = f * frameW + frameW / 2 - a.fw / 2, dy = (row + 1) * frameH - b.bottom;
+  // a frame's bottom centre (its animation's box bottom) lands on the cell's bottom centre
+  const draw = (a: Anim, b: typeof bw, f: number, col: number, row: number) => {
+    const src = Math.min(PMD_ROWS[row], Math.max(1, Math.floor(a.img.height / a.fh)) - 1);
+    const dx = col * frameW + frameW / 2 - a.fw / 2, dy = (row + 1) * frameH - b.bottom;
     g.save();
     g.beginPath();
-    g.rect(f * frameW, row * frameH, frameW, frameH);
+    g.rect(col * frameW, row * frameH, frameW, frameH);
     g.clip();
     g.drawImage(a.img, f * a.fw, src * a.fh, a.fw, a.fh, Math.round(dx), Math.round(dy), a.fw, a.fh);
     g.restore();
   };
-  ["down", "left", "right", "up"].forEach((d, i) => {
-    for (let f = 0; f < n; f++) draw(walk, bw, f, i, i);
-    draw(idle, bi, 0, 4 + i, i);
-    anims["walk-" + d] = { row: i, ...timing(walk.durations.slice(0, n)) };
-    anims["idle-" + d] = { row: 4 + i, frames: [0], fps: 0 };
+  const anims: HQ.Anims = {};
+  ["down", "left", "right", "up"].forEach((d, row) => {
+    draw(idle, bi, 0, 0, row);
+    draw(walk, bw, steps[0], 1, row);
+    draw(walk, bw, steps[1], 2, row);
+    anims["walk-" + d] = { row, frames: [1, 0, 2, 0], fps: 8 }; // as hq-pets plays it
+    anims["idle-" + d] = { row, frames: [0], fps: 0 };
   });
   walk.img.close();
   if (idle !== walk) idle.img.close();

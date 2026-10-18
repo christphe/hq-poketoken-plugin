@@ -1,7 +1,7 @@
 // Builds a Home Quarters sprite sheet for one Pokémon from PMD SpriteCollab, in the browser: nothing of
 // SpriteCollab is stored or served by this plugin. The page downloads Walk-Anim.png, Idle-Anim.png and
 // AnimData.xml from GitHub, crops the frames around the creature (feet on the bottom of the cell) and
-// lays them out as 8 rows: walk down, left, right, up, then idle down, left, right, up.
+// lays them out as 8 rows (walk down, left, right, up, then idle down, left, right, up), shrunk to pet size.
 import forms from "./forms.json";
 
 /** PokeTokenBar form names (Sources/PokeTokenBar/Core/PokemonForm.swift) -> SpriteCollab form folders
@@ -12,8 +12,11 @@ const PMD_FORMS = forms as Record<string, Record<string, number> | undefined>;
 const BASE = "https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master/sprite/";
 /** SpriteCollab rows: down, down-right, right, up-right, up, up-left, left, down-left. Ours: down, left, right, up. */
 const PMD_ROWS = [0, 6, 2, 4];
-/** Taller creatures are drawn at half size so a Wailord does not hide a meeting room. */
-const MAX_H = 72;
+/** SpriteCollab draws creatures about avatar-sized; a pet is smaller (hq-pets' pets are 16 x 20), so
+ * sheets are shrunk 1.5 times (a Pikachu stands 21 px), and 3 times past BIG px so a Wailord does not hide
+ * a meeting room: drawn UP times larger, then each DOWN x DOWN block becomes one pixel. */
+const BIG = 56;
+
 /** SpriteCollab durations count game frames, 60 a second. */
 const TICKS = 60;
 
@@ -92,9 +95,17 @@ function box(a: Anim): { half: number; top: number; bottom: number } {
   return { half: Math.ceil(half), top, bottom };
 }
 
-function fps(durations: number[]): number {
-  const avg = durations.reduce((s, d) => s + d, 0) / durations.length;
-  return Math.max(1, Math.min(60, Math.round(TICKS / avg)));
+/** SpriteCollab gives each frame its own duration (an idle often holds its first pose); Home Quarters plays
+ * frames at one rate, so a frame is repeated for each `unit` ticks it lasts, within 64 frames. */
+function timing(durations: number[]): { frames: number[]; fps: number } {
+  const total = durations.reduce((s, d) => s + d, 0);
+  let unit = Math.max(1, Math.min(...durations));
+  while (total / unit > 64) unit *= 2;
+  const frames: number[] = [];
+  durations.forEach((d, f) => {
+    for (let k = Math.max(1, Math.round(d / unit)); k > 0 && frames.length < 64; k--) frames.push(f);
+  });
+  return { frames, fps: Math.max(1, Math.min(60, Math.round(TICKS / unit))) };
 }
 
 /** Downloads and lays out the sheet of that Pokémon; null when SpriteCollab has no walk animation for it. */
@@ -117,9 +128,10 @@ export async function build(dex: number, form: string, shiny: boolean): Promise<
 async function layout(walk: Anim, idle: Anim): Promise<Built> {
   const bw = box(walk), bi = idle === walk ? bw : box(idle);
   const tall = Math.max(bw.bottom - bw.top, bi.bottom - bi.top, 1);
-  const s = tall > MAX_H ? 0.5 : 1;
-  const frameW = Math.max(8, Math.ceil(2 * Math.max(bw.half, bi.half, 1) * s));
-  const frameH = Math.max(8, Math.ceil(tall * s));
+  const [UP, DOWN] = tall > BIG ? [1, 3] : [2, 3]; // shrunk DOWN / UP times
+  const fit = (n: number) => Math.ceil(n / DOWN) * DOWN; // cells that shrink to whole pixels
+  const frameW = Math.max(fit(8 * DOWN / UP), fit(2 * Math.max(bw.half, bi.half, 1)));
+  const frameH = Math.max(fit(8 * DOWN / UP), fit(tall));
   const cols = Math.min(64, Math.max(walk.durations.length, idle.durations.length));
   const c = new OffscreenCanvas(cols * frameW, 8 * frameH);
   const g = c.getContext("2d")!;
@@ -134,21 +146,65 @@ async function layout(walk: Anim, idle: Anim): Promise<Built> {
       const row = k * 4 + i, src = Math.min(pr, rows - 1);
       for (let f = 0; f < n; f++) {
         // the frame's bottom centre (its box's bottom) lands on the cell's bottom centre
-        const dx = f * frameW + frameW / 2 - (a.fw / 2) * s, dy = (row + 1) * frameH - b.bottom * s;
+        const dx = f * frameW + frameW / 2 - a.fw / 2, dy = (row + 1) * frameH - b.bottom;
         g.save();
         g.beginPath();
         g.rect(f * frameW, row * frameH, frameW, frameH);
         g.clip();
-        g.drawImage(a.img, f * a.fw, src * a.fh, a.fw, a.fh, Math.round(dx), Math.round(dy), a.fw * s, a.fh * s);
+        g.drawImage(a.img, f * a.fw, src * a.fh, a.fw, a.fh, Math.round(dx), Math.round(dy), a.fw, a.fh);
         g.restore();
       }
-      const frames = Array.from({ length: n }, (_, f) => f);
-      anims[(k === 0 ? "walk-" : "idle-") + dirs[i]] = { row, frames, fps: fps(a.durations.slice(0, n)) };
+      anims[(k === 0 ? "walk-" : "idle-") + dirs[i]] = { row, ...timing(a.durations.slice(0, n)) };
     });
   });
   walk.img.close();
   if (idle !== walk) idle.img.close();
-  return { blob: await c.convertToBlob({ type: "image/png" }), frameW, frameH, anims };
+  const small = shrink(grow(c, UP), DOWN);
+  return { blob: await small.convertToBlob({ type: "image/png" }), frameW: frameW * UP / DOWN, frameH: frameH * UP / DOWN, anims };
+}
+
+/** Each pixel becomes n x n. */
+function grow(src: OffscreenCanvas, n: number): OffscreenCanvas {
+  if (n === 1) return src;
+  const out = new OffscreenCanvas(src.width * n, src.height * n);
+  const g = out.getContext("2d")!;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(src, 0, 0, out.width, out.height);
+  return out;
+}
+
+/** Each n x n block becomes one pixel: transparent when under a third is opaque, else its most frequent colour
+ * (an average would blur the pixel art), the darkest on a tie so 1 px outlines stay closed. */
+function shrink(src: OffscreenCanvas, n: number): OffscreenCanvas {
+  const W = Math.floor(src.width / n), H = Math.floor(src.height / n);
+  const a = src.getContext("2d")!.getImageData(0, 0, src.width, src.height).data;
+  const out = new OffscreenCanvas(W, H);
+  const g = out.getContext("2d")!;
+  const img = g.createImageData(W, H), d = img.data;
+  const px: number[] = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      px.length = 0;
+      for (let dy = 0; dy < n; dy++) {
+        for (let dx = 0; dx < n; dx++) {
+          const i = ((n * y + dy) * src.width + n * x + dx) * 4;
+          if (a[i + 3] >= 128) px.push(i);
+        }
+      }
+      if (3 * px.length < n * n) continue; // a third is enough: 1 px tips (ears, tails, outlines) stay
+      const o = (y * W + x) * 4;
+      let best = px[0], bestN = 0, bestL = 1e9;
+      for (const i of px) {
+        const n = px.filter((j) => a[j] === a[i] && a[j + 1] === a[i + 1] && a[j + 2] === a[i + 2]).length;
+        const l = a[i] * 0.3 + a[i + 1] * 0.59 + a[i + 2] * 0.11;
+        if (n > bestN || (n === bestN && l < bestL)) { best = i; bestN = n; bestL = l; }
+      }
+      d[o] = a[best]; d[o + 1] = a[best + 1]; d[o + 2] = a[best + 2];
+      d[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return out;
 }
 
 /** A small egg drawn here (cream with green spots), 3 wobble frames, the same on all four rows. */

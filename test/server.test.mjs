@@ -110,6 +110,20 @@ test("when hq-pets refuses or is off, the member is told why", async () => {
   assert.match(off.sent.at(-1)[1].error, /pets plugin is off/);
 });
 
+test("on start (onJoin) the saved Pokémon goes back to hq-pets, unless hidden or none", async () => {
+  const a = await loadPlugin();
+  await a.call("POST /pokemon", ann, JSON.stringify({ dex: 25, name: "Pikachu" }));
+  const b = await loadPlugin(); // the plugin restarted: hq-pets took its pets away
+  for (const [k, v] of a.kv) b.kv.set(k, v);
+  await b.mod.onJoin(ann);
+  assert.deepEqual(b.calls, [["setPet", { id: "pokemon", metadata: { dex: 25, form: "", shiny: false }, name: "Pikachu" }]]);
+  b.calls.length = 0;
+  await b.mod.onJoin({ id: 8, name: "Bob", role: "member" }); // nothing saved for Bob
+  b.kv.set("m:7", JSON.stringify({ current: { dex: 25, form: "", shiny: false, name: "Pikachu" }, hidden: true, at: 1 }));
+  await b.mod.onJoin(ann); // hidden: stays away
+  assert.equal(b.calls.length, 0);
+});
+
 test("the state survives a restart (kv)", async () => {
   const a = await loadPlugin();
   await a.call("POST /pokemon", ann, JSON.stringify({ dex: 201, form: "q", name: "Unown" }));

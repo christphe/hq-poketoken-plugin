@@ -100,6 +100,13 @@ export function load(): void {
   }, { token: true });
 }
 
+// Turned on (or restarted), and for each member who arrives: hq-pets takes a plugin's guest pets away when
+// it stops (turned off, crashed), so the saved Pokémon goes back without waiting for the next report.
+export async function onJoin(player: HQ.Player): Promise<void> {
+  const s = read(player.id);
+  if (s.current && !s.hidden) await save(player.id, s);
+}
+
 export async function onMessage(player: HQ.Player, msg: unknown): Promise<void> {
   if (typeof msg !== "object" || msg === null) return;
   const m = msg as Record<string, unknown>;
